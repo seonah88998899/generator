@@ -181,7 +181,7 @@ svg .tick{font-family:var(--mono);font-variant-numeric:tabular-nums}
 
   <section id="check" hidden class="grid" style="gap:14px">
     <div class="panel">
-      <div class="ctl" style="justify-content:space-between;margin-bottom:8px"><div><h2>점검 이행 관리 (복합 3~9호기)</h2><div class="sub">정비 이력·계획 탭에 있는 연도별 등급(C/B/A)에 해당하는 점검항목을 실제로 수행했는지 체크합니다. 표의 칸을 누르면 아래에 체크리스트가 열립니다. 칸 안의 숫자는 수행 항목 수 / 해당 항목 수입니다.</div></div>
+      <div class="ctl" style="justify-content:space-between;margin-bottom:8px"><div><h2>점검 이행 관리 (복합 3~9호기)</h2><div class="sub">정비 이력·계획 탭에 있는 연도별 등급(C/B/A)에 해당하는 점검항목을 실제로 수행했는지 체크합니다. 표의 칸을 누르면 아래에 체크리스트가 열립니다. 칸 안의 숫자는 수행 항목 수 / 해당 항목 수입니다. 등급별 점검항목 탭에서 항목을 추가·삭제·수정하면 이 탭에 자동 반영되고, 항목 이름을 고쳐도 기존 체크는 유지됩니다.</div></div>
         <div class="ctl"><button class="btn" id="kcopy">체크 내용 복사</button><button class="btn" id="kimp">가져오기</button></div></div>
       <div id="kio" hidden style="margin-bottom:10px"><div class="note" id="kiolab" style="margin-bottom:4px"></div><textarea id="kiotxt" rows="3" style="width:100%;font-family:var(--mono);font-size:12px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px"></textarea><button class="btn" id="kioapply" hidden style="margin-top:4px">적용</button></div>
       <div class="legend" style="margin-bottom:8px"><span><i class="sw" style="background:var(--ok-bg);border:1px solid var(--ok)"></i>전체 수행</span><span><i class="sw" style="background:var(--warn-bg);border:1px solid var(--warn)"></i>일부 수행</span><span><i class="sw" style="background:var(--bad-bg);border:1px solid var(--bad)"></i>미수행(!) 있음</span><span><i class="sw" style="border:1px solid var(--line)"></i>미입력</span><span class="note">점선 = 계획(아직 시행 전)</span></div>
@@ -440,10 +440,12 @@ function lineChart(box,labels,series,m){
 /* ---------- criteria ---------- */
 const LSC='gen-dash-crit-v1';
 let CO={},cm='5,6호기',cEdit=false;
-function loadCO(){try{CO=JSON.parse(localStorage.getItem(LSC)||'{}')||{}}catch(e){CO={}}}
+function cFix(){Object.values(CO).forEach(m=>m&&typeof m==='object'&&Object.values(m).forEach(l=>Array.isArray(l)&&l.forEach((x,j)=>{if(x&&!x.id)x.id='o'+j})))}
+const cNewId=()=>'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+function loadCO(){try{CO=JSON.parse(localStorage.getItem(LSC)||'{}')||{}}catch(e){CO={}}cFix()}
 function saveCO(){try{localStorage.setItem(LSC,JSON.stringify(CO))}catch(e){}}
 const cSecs=m=>D.crit[m].map((s,i)=>[s[0],(CO[m]&&CO[m][i])||s[4]]);
-const cOwn=si=>{CO[cm]=CO[cm]||{};if(!CO[cm][si])CO[cm][si]=JSON.parse(JSON.stringify(D.crit[cm][si][4]));return CO[cm][si]};
+const cOwn=si=>{CO[cm]=CO[cm]||{};if(!CO[cm][si])CO[cm][si]=JSON.parse(JSON.stringify(D.crit[cm][si][4])).map((x,j)=>({...x,id:'o'+j}));return CO[cm][si]};
 const cN=(it,g)=>it.filter(x=>/^O/.test(x[g]||'')).length;
 function cBars(){const S=cSecs(cm),mx=Math.max(...S.flatMap(s=>['C','B','A'].map(g=>cN(s[1],g))),1);
   $('#cbars').innerHTML=S.map(s=>`<div><b>${esc(s[0].replace(/^\d+\.\s*/,''))}</b><div class="note">${s[1].length}개 항목</div></div><div class="bars">${['C','B','A'].map(g=>{const v=cN(s[1],g);return `<div class="bl"><span style="width:12px">${g}</span><i class="b" style="width:${v/mx*100}%;background:var(--g${g.toLowerCase()}-bg)"></i>${v}</div>`}).join('')}</div>`).join('')}
@@ -475,24 +477,25 @@ $('#cedit').onclick=()=>{cEdit=!cEdit;if(!cEdit)$('#cio').hidden=true;criteria()
 $('#ctab').onchange=e=>{const t=e.target;if(!t.dataset||!t.dataset.f)return;
   const it=cOwn(+t.dataset.si)[+t.dataset.ii];if(!it)return;it[t.dataset.f]=t.value.trim();saveCO();cBars()};
 $('#ctab').onclick=e=>{const t=e.target.closest('button');if(!t)return;
-  if(t.dataset.add!=null){const l=cOwn(+t.dataset.add);l.push({item:'',C:'',B:'',A:'',note:''});saveCO();cBars();cTable();
+  if(t.dataset.add!=null){const l=cOwn(+t.dataset.add);l.push({id:cNewId(),item:'',C:'',B:'',A:'',note:''});saveCO();cBars();cTable();
     const r=[...$('#ctab').querySelectorAll(`input[data-si="${t.dataset.add}"][data-f="item"]`)].pop();if(r)r.focus()}
   else if(t.dataset.del!=null){const [i,j]=t.dataset.del.split('|').map(Number);cOwn(i).splice(j,1);saveCO();cBars();cTable()}};
 let crst=0;$('#creset').onclick=function(){if(!crst){crst=1;this.textContent='정말 되돌릴까요? 한 번 더 누르세요';setTimeout(()=>{crst=0;this.textContent='이 설비 기준 되돌리기'},3500);return}
   crst=0;this.textContent='이 설비 기준 되돌리기';delete CO[cm];saveCO();criteria()};
 $('#ccopy').onclick=()=>{const s=JSON.stringify(CO);$('#cio').hidden=false;$('#cioapply').hidden=true;$('#ciolab').textContent='수정 내용입니다. 복사되었습니다. 이 글을 Claude에게 붙여넣으면 파일에 고정해 드립니다.';const ta=$('#ciotxt');ta.value=s;ta.select();try{navigator.clipboard.writeText(s).catch(()=>{})}catch(e){}};
 $('#cimp').onclick=()=>{$('#cio').hidden=false;$('#cioapply').hidden=false;$('#ciolab').textContent='복사해 둔 수정 내용을 붙여넣고 적용을 누르세요.';$('#ciotxt').value='';$('#ciotxt').focus()};
-$('#cioapply').onclick=()=>{try{const o=JSON.parse($('#ciotxt').value);if(!o||typeof o!=='object'||Array.isArray(o))throw 0;CO=o;saveCO();$('#cio').hidden=true;criteria()}catch(e){$('#ciolab').textContent='형식이 맞지 않습니다. 복사한 내용을 그대로 붙여넣어 주세요.'}};
+$('#cioapply').onclick=()=>{try{const o=JSON.parse($('#ciotxt').value);if(!o||typeof o!=='object'||Array.isArray(o))throw 0;CO=o;cFix();saveCO();$('#cio').hidden=true;criteria()}catch(e){$('#ciolab').textContent='형식이 맞지 않습니다. 복사한 내용을 그대로 붙여넣어 주세요.'}};
 /* ---------- 점검 이행 관리 ---------- */
 const LSK='gen-dash-chk-v1',GR={C:1,B:2,A:3};
 let CK={},kSel=null,kF='all';
 function loadCK(){try{CK=JSON.parse(localStorage.getItem(LSK)||'{}')||{}}catch(e){CK={}}}
 function saveCK(){try{localStorage.setItem(LSK,JSON.stringify(CK))}catch(e){}}
-function kPut(k,r){if(!r.s&&!r.m)delete CK[k];else CK[k]=r;saveCK()}
+const kGet=it=>CK[it.key]||CK[it.old];
+function kPut(it,r){delete CK[it.old];if(!r.s&&!r.m)delete CK[it.key];else CK[it.key]=r;saveCK()}
 const kEv=(u,y)=>{const es=u.ev.filter(e=>e.y===y);return es.length?es.reduce((a,b)=>GR[b.g]>GR[a.g]?b:a):null};
 function kItems(u,g,y){const m=modelOf(u.unit),out=[];if(!m||!g||!D.crit[m])return out;
-  cSecs(m).forEach(s=>s[1].forEach(x=>{if(x.item&&/^O/.test(x[g]||''))out.push({sec:s[0],item:x.item,note:x.note||'',key:`${u.unit}|${y}|${s[0]}|${x.item}`})}));return out}
-function kProg(u,y){const e=kEv(u,y),it=e?kItems(u,e.g,y):[];let d=0,n=0;it.forEach(i=>{const r=CK[i.key];if(r&&r.s==='d')d++;else if(r&&r.s==='n')n++});return {t:it.length,d,n}}
+  cSecs(m).forEach((s,si)=>s[1].forEach((x,j)=>{if(x.item&&/^O/.test(x[g]||''))out.push({sec:s[0],item:x.item,note:x.note||'',key:`${u.unit}|${y}|${si}|${x.id||'o'+j}`,old:`${u.unit}|${y}|${s[0]}|${x.item}`})}));return out}
+function kProg(u,y){const e=kEv(u,y),it=e?kItems(u,e.g,y):[];let d=0,n=0;it.forEach(i=>{const r=kGet(i);if(r&&r.s==='d')d++;else if(r&&r.s==='n')n++});return {t:it.length,d,n}}
 function kCur(){if(!kSel)return null;const u=REP.find(x=>x.unit===kSel.u);if(!u)return null;const e=kEv(u,kSel.y);if(!e)return null;return {u,y:kSel.y,e,items:kItems(u,e.g,kSel.y)}}
 function kMat(){const R=yrRange();let h='<thead><tr><th style="position:sticky;left:0;background:var(--surface)">호기</th>';
   for(let y=R.s;y<=R.e;y++)h+=`<th style="text-align:center;${y===CUR?'color:var(--now);font-weight:600':''}">${String(y).slice(2)}</th>`;
@@ -513,7 +516,7 @@ function kHead(){const c=kCur(),box=$('#khead');$('#kctl').hidden=!c;
     <div class="note"><b>수행 ${p.d}</b> · <b>미수행 ${p.n}</b> · 미확인 ${todo}</div>`}
 function kTab(){const c=kCur();if(!c){$('#ktab').innerHTML='';$('#kcnt').textContent='';return}
   let h='<thead><tr><th>점검 항목</th><th>수행 여부</th><th>메모</th></tr></thead><tbody>',cs='',n=0;
-  c.items.forEach((it,i)=>{const r=CK[it.key]||{},st=r.s||'';
+  c.items.forEach((it,i)=>{const r=kGet(it)||{},st=r.s||'';
     if((kF==='todo'&&st)||(kF==='ng'&&st!=='n')||(kF==='ok'&&st!=='d'))return;
     if(it.sec!==cs){cs=it.sec;h+=`<tr class="grp"><td colspan="3">${esc(cs)}</td></tr>`}
     n++;h+=`<tr><td>${esc(it.item)}${it.note?`<div class="note">${esc(it.note)}</div>`:''}</td><td style="white-space:nowrap"><button class="btn ${st==='d'?'pri':''}" data-i="${i}" data-s="d" aria-pressed="${st==='d'}">✓ 수행</button> <button class="btn ${st==='n'?'kbad':''}" data-i="${i}" data-s="n" aria-pressed="${st==='n'}">✕ 미수행</button></td><td><input class="ei" data-i="${i}" value="${esc(r.m||'')}" aria-label="메모" placeholder="메모"></td></tr>`});
@@ -521,13 +524,13 @@ function kTab(){const c=kCur();if(!c){$('#ktab').innerHTML='';$('#kcnt').textCon
 function chk(){kMat();kHead();kTab()}
 $('#kmat').onclick=e=>{const b=e.target.closest('button.kc');if(!b)return;kSel={u:b.dataset.u,y:+b.dataset.y};chk();$('#khead').scrollIntoView({behavior:'smooth',block:'start'})};
 $('#ktab').onclick=e=>{const b=e.target.closest('button[data-i]');if(!b)return;const c=kCur();if(!c)return;
-  const it=c.items[+b.dataset.i],r=CK[it.key]||{};r.s=r.s===b.dataset.s?'':b.dataset.s;kPut(it.key,r);kHead();kTab();kMat()};
+  const it=c.items[+b.dataset.i],r=kGet(it)||{};r.s=r.s===b.dataset.s?'':b.dataset.s;kPut(it,r);kHead();kTab();kMat()};
 $('#ktab').onchange=e=>{const t=e.target;if(t.tagName!=='INPUT')return;const c=kCur();if(!c)return;const it=c.items[+t.dataset.i];if(!it)return;
-  const r=CK[it.key]||{};r.m=t.value.trim();kPut(it.key,r)};
+  const r=kGet(it)||{};r.m=t.value.trim();kPut(it,r)};
 $('#kfil').onchange=()=>{kF=$('#kfil').value;kTab()};
-$('#kall').onclick=()=>{const c=kCur();if(!c)return;c.items.forEach(it=>{const r=CK[it.key]||{};if(!r.s){r.s='d';kPut(it.key,r)}});chk()};
+$('#kall').onclick=()=>{const c=kCur();if(!c)return;c.items.forEach(it=>{const r=kGet(it)||{};if(!r.s){r.s='d';kPut(it,r)}});chk()};
 let kcl=0;$('#kclr').onclick=function(){if(!kcl){kcl=1;this.textContent='정말 지울까요? 한 번 더 누르세요';setTimeout(()=>{kcl=0;this.textContent='이 시트 체크 지우기'},3500);return}
-  kcl=0;this.textContent='이 시트 체크 지우기';const c=kCur();if(c){c.items.forEach(it=>delete CK[it.key]);saveCK()}chk()};
+  kcl=0;this.textContent='이 시트 체크 지우기';const c=kCur();if(c){c.items.forEach(it=>{delete CK[it.key];delete CK[it.old]});saveCK()}chk()};
 $('#kcopy').onclick=()=>{const s=JSON.stringify(CK);$('#kio').hidden=false;$('#kioapply').hidden=true;$('#kiolab').textContent='체크 내용입니다. 복사되었습니다. 이 글을 Claude에게 붙여넣으면 파일에 고정해 드립니다.';const ta=$('#kiotxt');ta.value=s;ta.select();try{navigator.clipboard.writeText(s).catch(()=>{})}catch(e){}};
 $('#kimp').onclick=()=>{$('#kio').hidden=false;$('#kioapply').hidden=false;$('#kiolab').textContent='복사해 둔 체크 내용을 붙여넣고 적용을 누르세요.';$('#kiotxt').value='';$('#kiotxt').focus()};
 $('#kioapply').onclick=()=>{try{const o=JSON.parse($('#kiotxt').value);if(!o||typeof o!=='object'||Array.isArray(o))throw 0;CK=o;saveCK();$('#kio').hidden=true;chk()}catch(e){$('#kiolab').textContent='형식이 맞지 않습니다. 복사한 내용을 그대로 붙여넣어 주세요.'}};
@@ -540,7 +543,7 @@ loadOvr();loadCO();loadCK();build();overview();timeline();updBar();insul();crite
 $('#asof').textContent=`${CUR}-${p2(TODAY.getMonth()+1)}-${p2(TODAY.getDate())}`;
 $('#todo').innerHTML=[
  '정비 등급 기준은 5,6호기 / 7~9호기 점검 기준표를 연결했고, 복합 3,4호기(GT7~12 · ST3·4)는 5~9호기 기준을 복사한 초안입니다(7~9호기 전체 + 5,6호기의 Encloure·Exciter). 3,4호기 실제 기준이 다르면 [점검항목 수정]으로 고치거나 알려주세요.',
- '점검 이행 관리 탭은 정비 이력·계획 탭의 연도별 등급을 따라가며, 해당 등급에서 O(수행)인 항목만 체크 대상입니다(인출X 등 조건부 표시 항목 제외). 체크 값은 호기·연도·설비분류·항목명으로 저장되므로, 점검항목 이름을 고치면 그 항목의 기존 체크는 새 항목으로 이어지지 않습니다.',
+ '점검 이행 관리 탭은 정비 이력·계획 탭의 연도별 등급을 따라가며, 해당 등급에서 O(수행)인 항목만 체크 대상입니다(인출X 등 조건부 표시 항목 제외). 체크 값은 호기·연도·설비분류·항목명으로 저장되므로, 등급별 점검항목 탭의 수정(추가·삭제·이름·등급 변경)은 이 탭에 자동 반영됩니다. 항목을 삭제하면 그 체크도 목록에서 빠지고, 새 항목은 이름을 입력하고 C/B/A 칸에 O를 넣어야 목록에 나타납니다.',
  '절연진단 시트의 CC #70/#80/#90을 대수리 실적표의 GT70/80/90과 같은 호기로 보고 연결했습니다.',
  '절연진단 수치는 3개 값(A/B/C상으로 가정)을 그대로 그렸습니다. 판정 기준치(예: P.D, P.I)가 있으면 기준선과 색 판정을 추가할 수 있습니다.',
  '정비 간격 경고선(3년 회색, 4년 노란색)은 제작사 권고 C급 3년을 바탕으로 임시로 정했습니다. 실제 허용 편차가 있으면 바꾸겠습니다.',
