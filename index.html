@@ -6,6 +6,7 @@
 <meta name="robots" content="noindex">
 <title>발전기 정비 관리 대시보드</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 /* Layout: sticky header + 4 tabs (개요 / 정비 이력 / 절연진단 / 점검항목). Summary first, detail below. */
 :root{
@@ -101,6 +102,14 @@ svg .tick{font-family:var(--mono);font-variant-numeric:tabular-nums}
 .kc:hover{background:var(--surface-2)}.kc.ok{background:var(--ok-bg);color:var(--ok)}.kc.bad{background:var(--bad-bg);color:var(--bad)}.kc.part{background:var(--warn-bg);color:var(--warn)}.kc.sel{outline:2px solid var(--accent);outline-offset:-1px}
 .btn.kbad{background:var(--bad);border-color:var(--bad);color:var(--surface);font-weight:600}
 #kmat td,#kmat th{padding:3px 2px}
+#ovmat{font-size:12px;width:100%;min-width:640px;table-layout:fixed}
+#ovmat th:first-child,#ovmat td:first-child{width:72px}
+#ovmat th{padding:3px 2px;font-size:10.5px;text-align:center}
+#ovmat th:first-child,#ovmat td:first-child{text-align:left;padding:2px 10px 2px 4px;min-width:48px}
+#ovmat td{padding:1px 2px}
+#ovmat tr.grp td{padding:2px 6px;font-size:11px}
+#ovmat .kc{min-width:30px;width:100%;gap:0;font-size:9.5px;padding:1px;line-height:1.15}
+#ovmat .kc .chip{min-width:20px;height:16px;padding:0 4px;font-size:10.5px;border-width:1px}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -127,14 +136,19 @@ svg .tick{font-family:var(--mono);font-variant-numeric:tabular-nums}
 
   <section id="overview" class="grid" style="gap:18px">
     <div class="grid kpis" id="kpis"></div>
-    <div class="panel">
-      <h2>관리 주기 기준</h2>
-      <div class="sub" style="margin-bottom:6px">5~9호기 제작사 권고: C급 3년 · B급 6년 · A급 12년. 표준 대정비(A급)에서도 회전자 인출은 필수가 아님(Fast-gen 적용).</div>
-      <div class="scroll"><svg id="cycle" viewBox="0 0 760 118" style="min-width:560px;width:100%;display:block" role="img" aria-label="0~12년 정비 주기: 2~3년 C급, 6년 B급, 9년 C급, 12년 A급"></svg></div>
+    <div class="panel" style="padding:10px 16px">
+      <div class="ctl" style="gap:2px 12px;margin-bottom:2px"><h2 style="margin:0">관리 주기 기준</h2><span class="sub">5~9호기 제작사 권고: C급 3년 · B급 6년 · A급 12년. 표준 대정비(A급)에서도 회전자 인출은 필수가 아님(Fast-gen 적용).</span></div>
+      <div class="scroll"><svg id="cycle" viewBox="0 0 760 58" style="min-width:560px;width:100%;display:block" role="img" aria-label="0~12년 정비 주기: 2~3년 C급, 6년 B급, 9년 C급, 12년 A급"></svg></div>
     </div>
-    <div class="grid two">
-      <div class="panel"><h2>호기별 현황</h2><div class="sub" style="margin-bottom:8px">마지막 실적 이후 경과와 다음 계획. 다음 계획까지의 간격이 3년을 넘으면 회색, 4년을 넘으면 노란색으로 표시합니다.</div><div class="scroll" id="status"></div></div>
-      <div class="panel"><h2>연도별 정비 건수</h2><div class="sub" style="margin-bottom:8px">등급별 누적. 현재 선까지가 실적, 이후는 계획.</div><div id="yearly"></div></div>
+    <div class="panel">
+      <h2 id="ovmh">호기별 정비 이행 현황</h2>
+      <div class="sub" style="margin-bottom:8px">점검 이행 관리 탭과 같은 기준입니다. 칸 = 해당 연도 정비 등급과 점검항목 수행 수 / 해당 항목 수. 14년부터 올해까지만 표시되며 해가 바뀌면 한 해씩 늘어납니다. 칸을 누르면 해당 체크리스트로 이동합니다.</div>
+      <div class="legend" style="margin-bottom:8px"><span><i class="sw" style="background:var(--ok-bg);border:1px solid var(--ok)"></i>전체 수행</span><span><i class="sw" style="background:var(--warn-bg);border:1px solid var(--warn)"></i>일부 수행</span><span><i class="sw" style="background:var(--bad-bg);border:1px solid var(--bad)"></i>미수행(!) 있음</span><span><i class="sw" style="border:1px solid var(--line)"></i>미입력</span><span class="note">점선 = 계획(아직 시행 전)</span></div>
+      <div class="scroll"><table id="ovmat"></table></div>
+    </div>
+    <div class="panel todo">
+      <h2>초안 확인 필요 사항</h2>
+      <ul class="todo" style="margin:6px 0 0;padding-left:18px;color:var(--ink-2)" id="todo"></ul>
     </div>
   </section>
 
@@ -149,6 +163,14 @@ svg .tick{font-family:var(--mono);font-variant-numeric:tabular-nums}
   </section>
 
   <section id="insul" hidden>
+    <div class="panel" style="margin-bottom:14px">
+      <div class="ctl" style="margin-bottom:6px"><h2 style="margin:0">전 호기 엑셀 업로드</h2><span style="flex:1"></span>
+        <span class="st mute" id="idirty">저장됨</span>
+        <button class="btn pri" id="xup">엑셀 업로드</button><button class="btn" id="xdn">현재 이력 엑셀로 내려받기(양식)</button>
+        <button class="btn pri" id="isave" disabled>저장하기</button><button class="btn" id="icancel" disabled>변경 취소</button><input type="file" id="xfile" accept=".xlsx,.xls,.csv" hidden></div>
+      <div class="note">엑셀 한 파일로 모든 호기를 한 번에 올립니다. 올린 내용은 먼저 화면에만 반영되며, <b>[저장하기]</b>를 눌러야 이 브라우저에 저장됩니다(저장 전에는 [변경 취소]로 되돌릴 수 있습니다). 읽는 형태: ① 기존 "발전기 점검 이력"(호기별 9줄 블록: 날짜·시행처·공사명·절연저항·P.I·ΔI·tanδ·P.D·특이사항, 회차가 가로 열) ② 한 줄에 한 번의 진단을 적은 표(열: 호기·날짜·시행처·공사명·절연저항·성극지수·교류전류·유전정접·부분방전·특이사항). 날짜가 기간("2011-04-29~05-22")이면 시작일로 저장하며, 같은 호기·날짜·공사명은 갱신, 없으면 추가합니다.</div>
+      <div class="note" id="xmsg" hidden style="margin-top:8px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);color:var(--ink)"></div>
+    </div>
     <div class="split">
       <div class="panel" style="padding:10px"><h2 style="padding:4px 6px">호기 선택</h2><div class="list" id="ulist"></div></div>
       <div class="panel" id="ipanel"></div>
@@ -194,10 +216,6 @@ svg .tick{font-family:var(--mono);font-variant-numeric:tabular-nums}
     </div>
   </section>
 
-  <div class="panel todo">
-    <h2>초안 확인 필요 사항</h2>
-    <ul class="todo" style="margin:6px 0 0;padding-left:18px;color:var(--ink-2)" id="todo"></ul>
-  </div>
 </div>
 <div id="ed" hidden role="dialog" aria-modal="true" aria-labelledby="edt"><div class="edbox">
   <h2 id="edt" style="font-size:17px"></h2><div class="sub" id="edinfo" style="margin-bottom:12px"></div>
@@ -205,6 +223,22 @@ svg .tick{font-family:var(--mono);font-variant-numeric:tabular-nums}
   <div class="seg" id="edg" style="margin-bottom:12px"><button data-g="C" aria-pressed="false">C급</button><button data-g="B" aria-pressed="false">B급</button><button data-g="A" aria-pressed="false">A급</button><button data-g="" aria-pressed="false">없음(삭제)</button></div>
   <div class="ctl" style="margin-bottom:12px"><label class="note" for="edm">월</label><select id="edm"></select><label class="note" for="edn" style="margin-left:8px">메모</label><input id="edn" type="text" style="flex:1;min-width:120px;font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)"></div>
   <div class="ctl"><button class="btn pri" id="edsave">저장</button><button class="btn" id="edreset">기본값으로 되돌리기</button><button class="btn" id="edcancel">취소</button></div>
+</div></div>
+<div id="ied" hidden role="dialog" aria-modal="true" aria-labelledby="iedt"><div class="edbox" style="width:min(560px,100%);max-height:92vh;overflow:auto">
+  <h2 id="iedt" style="font-size:17px"></h2><div class="sub" id="iedinfo" style="margin-bottom:10px">수치는 A상/B상/C상 순서로 슬래시(/)로 구분해 적습니다. 예: 5,100/5,160/5,230</div>
+  <div style="display:grid;grid-template-columns:90px 1fr;gap:8px;align-items:center">
+    <label class="note" for="ie-date">날짜</label><input class="ei" id="ie-date" placeholder="YYYY-MM-DD 또는 YYYY-MM">
+    <label class="note" for="ie-org">시행처</label><input class="ei" id="ie-org">
+    <label class="note" for="ie-title">공사명</label><input class="ei" id="ie-title">
+    <label class="note" for="ie-ir">절연저항 [MΩ]</label><input class="ei" id="ie-ir">
+    <label class="note" for="ie-pi">성극지수 P.I</label><input class="ei" id="ie-pi">
+    <label class="note" for="ie-di">교류전류 ΔI [%]</label><input class="ei" id="ie-di">
+    <label class="note" for="ie-tan">유전정접 tanδ [%]</label><input class="ei" id="ie-tan">
+    <label class="note" for="ie-pd">부분방전 P.D [pC]</label><input class="ei" id="ie-pd">
+    <label class="note" for="ie-note">특이사항</label><textarea class="ei" id="ie-note" rows="3" style="font-family:inherit"></textarea>
+  </div>
+  <div class="note" id="iemsg" style="color:var(--bad);min-height:18px;margin:6px 0"></div>
+  <div class="ctl"><button class="btn pri" id="iesave">저장</button><button class="btn" id="iecancel">취소</button></div>
 </div></div>
 <div id="tip" role="status"></div>
 
@@ -299,36 +333,16 @@ function overview(){
     ['다음 정비까지',mths,'개월',`${nextAny.unit} ${ym(nextAny)} ${nextAny.g}급`],
     ['정비 간격 4년 초과',gaps4.length,'건','실적 구간 중 · 3년 초과는 '+gaps.length+'건']
   ].map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}<small>${k[2]}</small></div><div class="d">${esc(k[3])}</div></div>`).join('');
-  /* cycle ruler */
+  /* cycle ruler (compact) */
   const X=y=>40+y*(680/12),pts=[[2.5,'C','2~3년'],[6,'B','6년'],[9,'C','9년'],[12,'A','12년']];
-  let s=`<line x1="${X(0)}" x2="${X(12)}" y1="62" y2="62" stroke="var(--line)" stroke-width="2"/>`;
-  for(let y=0;y<=12;y++)s+=`<line x1="${X(y)}" x2="${X(y)}" y1="${y%3?58:54}" y2="66" stroke="var(--ink-3)"/><text class="tick" x="${X(y)}" y="86" text-anchor="middle">${y}</text>`;
-  s+=`<text x="${X(6)}" y="106" text-anchor="middle">정비 후 경과 연수</text>`;
-  pts.forEach(([y,g,l])=>{s+=`<g><rect x="${X(y)-30}" y="14" width="60" height="26" rx="4" style="fill:var(--${g==='A'?'ga':g==='B'?'gb':'gc'}-bg)"/><text x="${X(y)}" y="31" text-anchor="middle" style="fill:var(--${g==='A'?'ga':g==='B'?'gb':'gc'}-fg);font-weight:600;font-size:12px">${g}급 · ${l}</text><line x1="${X(y)}" x2="${X(y)}" y1="40" y2="62" stroke="var(--ink-3)" stroke-dasharray="2 2"/></g>`});
+  let s=`<line x1="${X(0)}" x2="${X(12)}" y1="35" y2="35" stroke="var(--line)" stroke-width="2"/>`;
+  for(let y=0;y<=12;y++)s+=`<line x1="${X(y)}" x2="${X(y)}" y1="${y%3?32:29}" y2="38" stroke="var(--ink-3)"/><text class="tick" x="${X(y)}" y="52" text-anchor="middle">${y}</text>`;
+  s+=`<text x="2" y="52" style="font-size:10px">경과(년)</text>`;
+  pts.forEach(([y,g,l])=>{const c=g==='A'?'ga':g==='B'?'gb':'gc';s+=`<g><rect x="${X(y)-32}" y="2" width="64" height="22" rx="4" style="fill:var(--${c}-bg)"/><text x="${X(y)}" y="17" text-anchor="middle" style="fill:var(--${c}-fg);font-weight:600;font-size:12px">${g}급 · ${l}</text><line x1="${X(y)}" x2="${X(y)}" y1="24" y2="35" stroke="var(--ink-3)" stroke-dasharray="2 2"/></g>`});
   $('#cycle').innerHTML=s;
-  /* status table */
-  let h='<table><thead><tr><th>호기</th><th>마지막 실적</th><th class="n">경과</th><th>마지막 A급</th><th>다음 계획</th><th class="n">간격</th></tr></thead><tbody>',cur='';
-  REP.forEach(u=>{
-    if(u.group!==cur){cur=u.group;h+=`<tr class="grp"><td colspan="6">${esc(cur)}</td></tr>`}
-    const l=u.last,n=u.next,el=l?(TODAY-l.t)/31557600000:null;
-    const gap=n&&l?(n.t-l.t)/31557600000:null;
-    h+=`<tr><td><b>${u.unit}</b></td><td>${l?chip(l.g)+' <span class="n">'+ym(l)+'</span>':'-'}</td><td class="n">${l?yrs(el):'-'}</td>
-    <td>${u.lastA?ym(u.lastA)+' ('+yrs((TODAY-u.lastA.t)/31557600000)+')':'<span class="sub">실적 없음</span>'}</td>
-    <td>${n?chip(n.g,1)+' '+ym(n):(u.sug[0]?chip(u.sug[0].g,1,u.sug[0].g+'*')+' '+ym(u.sug[0])+'<span class="tag">권고</span>':'<span class="sub">계획 없음</span>')}</td>
-    <td class="n">${gap!=null?(gap>4?`<span class="st warn">▲ ${yrs(gap)}</span>`:gap>3?`<span class="st mute">${yrs(gap)}</span>`:yrs(gap)):'-'}</td></tr>`});
-  $('#status').innerHTML=h+'</tbody></table>';
-  /* yearly stacked */
-  const R=yrRange(),NY=R.e-R.s+1,Y=[...Array(NY)].map((_,i)=>R.s+i),cnt=Y.map(y=>({A:0,B:0,C:0}));
-  all.forEach(e=>{if(cnt[e.y-R.s])cnt[e.y-R.s][e.g]++});
-  const W=640,H=260,L=30,B=28,T=10,mx=Math.max(...cnt.map(c=>c.A+c.B+c.C)),sy=v=>H-B-(v/(mx+1))*(H-B-T),bw=(W-L)/NY;
-  let sv=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block" role="img" aria-label="연도별 등급별 정비 건수">`;
-  for(let v=0;v<=mx+1;v+=2)sv+=`<line x1="${L}" x2="${W}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--grid)"/><text class="tick" x="${L-6}" y="${sy(v)+4}" text-anchor="end">${v}</text>`;
-  Y.forEach((y,i)=>{let b=0;const x=L+i*bw+bw*.18,w=bw*.64;
-    ['C','B','A'].forEach(g=>{const v=cnt[i][g];if(!v)return;const y0=sy(b),y1=sy(b+v);const fut=y>CUR;
-      sv+=`<rect x="${x}" y="${y1+1}" width="${w}" height="${Math.max(0,y0-y1-2)}" rx="2" style="fill:var(--${g==='A'?'ga':g==='B'?'gb':'gc'}-bg);${fut?'opacity:.55':''}"><title>${y}년 ${g}급 ${v}건</title></rect>`;b+=v});
-    sv+=`<text class="tick" x="${x+w/2}" y="${H-10}" text-anchor="middle" ${y===CUR?'style="fill:var(--now);font-weight:600"':''}>${String(y).slice(2)}</text>`});
-  const nx=L+(CUR-R.s+.9)*bw;sv+=`<line x1="${nx}" x2="${nx}" y1="${T}" y2="${H-B}" stroke="var(--now)" stroke-dasharray="3 3"/><text x="${nx+4}" y="${T+8}" style="fill:var(--now)">현재</text></svg>`;
-  $('#yearly').innerHTML=sv+`<div class="legend" style="margin-top:6px"><span><i class="sw" style="background:var(--gc-bg)"></i>C급</span><span><i class="sw" style="background:var(--gb-bg)"></i>B급</span><span><i class="sw" style="background:var(--ga-bg)"></i>A급</span><span class="sub">연한 색 = 계획</span></div>`;
+  /* 호기별 정비 이행 현황: 점검 이행 관리 매트릭스 (14년 ~ 올해) */
+  $('#ovmat').innerHTML=kMatHtml(CUR,false);
+  $('#ovmh').textContent=`호기별 정비 이행 현황 (${yrRange().s}–${CUR})`;
 }
 /* ---------- timeline ---------- */
 const cellEv=(u,y)=>u.ev.filter(e=>e.y===y).concat(u.sug.filter(e=>e.y===y));
@@ -398,22 +412,127 @@ const MET=[['ir','절연저항','MΩ'],['pi','성극지수(P.I)',''],['di','교�
 const WARN=/초과|이완|층간단락|요주의|손상|코로나|추이관리|이상/;
 const nm=s=>s.replace(/G\/T #/,'GT').replace(/S\/T #/,'ST').replace(/CC #/,'GT');
 let selU=D.insul.findIndex(u=>u.unit==='G/T #51'),selM='pd';
+/* ---------- 절연진단: 직접 수정 · 엑셀 업로드 (이 브라우저에 저장) ---------- */
+const LSI='gen-dash-insul-v1',MK=['ir','pi','di','tan','pd'];
+const D0={};D.insul.forEach(u=>{D0[u.unit]=JSON.parse(JSON.stringify(u.events))});
+let INS={};
+function saveINS(){try{localStorage.setItem(LSI,JSON.stringify(INS))}catch(e){}}
+function applyINS(o){Object.keys(o||{}).forEach(un=>{const evs=o[un];if(!Array.isArray(evs))return;const u=D.insul.find(x=>x.unit===un);if(u)u.events=evs;else D.insul.push({unit:un,elapsed:'',events:evs,irUnit:'MΩ'})})}
+function loadINS(){try{INS=JSON.parse(localStorage.getItem(LSI)||'{}')||{}}catch(e){INS={}}applyINS(INS)}
+const dkey=d=>(d||'').padEnd(10,'0');
+function setEvents(un,evs){evs.sort((a,b)=>dkey(a.d).localeCompare(dkey(b.d)));let u=D.insul.find(x=>x.unit===un);
+  if(!u){u={unit:un,elapsed:'',events:[],irUnit:'MΩ'};D.insul.push(u)}u.events=evs;INS[un]=evs;updDirty()}
+function pnum(str){if(str==null||str==='')return null;const v=String(str).split('/').map(x=>{x=x.replace(/,/g,'').trim();return /^-?\d+(\.\d+)?$/.test(x)?parseFloat(x):null});return v.every(x=>x==null)?null:v}
+function normDate(v){if(v==null||v==='')return '';
+  if(typeof v==='number'&&v>20000&&v<80000&&window.XLSX){const c=XLSX.SSF.parse_date_code(v);return c?`${c.y}-${p2(c.m)}-${p2(c.d)}`:''}
+  const t=String(v).trim();let m=t.match(/^(\d{4})(\d{2})(\d{2})$/);if(m)return `${m[1]}-${m[2]}-${m[3]}`;
+  m=t.match(/(\d{4})\D+(\d{1,2})(?:\D+(\d{1,2}))?/);return m?`${m[1]}-${p2(+m[2])}${m[3]?'-'+p2(+m[3]):''}`:''}
+function mkEvent(f,old){const e={date:f.date,org:f.org||null,title:f.title||null,note:f.note||null,n:{},d:f.date,usr:true};
+  MK.forEach(k=>{const t=(f[k]==null||f[k]==='')?null:String(f[k]);e[k]=t;e.n[k]=old&&old[k]===t&&old.n?old.n[k]:pnum(t)});return e}
+const nv=v=>v==null?'<span class="sub">-</span>':fmt(v);
+let iedIdx=null;
+function openIED(idx){const u=D.insul[selU];iedIdx=idx;const e=idx>=0?u.events[idx]:{};
+  $('#iedt').textContent=idx>=0?`${u.unit} · ${e.d||''} 절연진단 수정`:`${u.unit} · 점검 추가`;
+  $('#ie-date').value=e.date||e.d||'';$('#ie-org').value=e.org||'';$('#ie-title').value=e.title||'';$('#ie-note').value=e.note||'';
+  MK.forEach(k=>{$('#ie-'+k).value=e[k]||''});$('#iemsg').textContent='';hideTip();$('#ied').hidden=false;$('#ie-date').focus()}
+const closeIED=()=>{$('#ied').hidden=true;iedIdx=null};
+$('#iecancel').onclick=closeIED;$('#ied').addEventListener('click',e=>{if(e.target.id==='ied')closeIED()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&iedIdx!==null)closeIED()});
+$('#iesave').onclick=()=>{const d=normDate($('#ie-date').value);if(!d){$('#iemsg').textContent='날짜를 YYYY-MM-DD 또는 YYYY-MM 형식으로 입력하세요.';return}
+  const u=D.insul[selU],evs=u.events.slice(),old=iedIdx>=0?evs[iedIdx]:null,f={date:d,org:$('#ie-org').value.trim(),title:$('#ie-title').value.trim(),note:$('#ie-note').value.trim()};
+  MK.forEach(k=>{f[k]=$('#ie-'+k).value.trim()});const ne=mkEvent(f,old);
+  if(iedIdx>=0)evs[iedIdx]=ne;else evs.push(ne);setEvents(u.unit,evs);selU=D.insul.indexOf(u);closeIED();insul()};
+/* 엑셀 업로드 */
+const ukey=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+function unitMap(){const m={};D.insul.forEach(u=>{const k=ukey(u.unit);m[k]=u.unit;if(k.startsWith('CC'))m['GT'+k.slice(2)]=u.unit});return m}
+const XH=[['unit',/호기|설비|unit/i],['date',/날짜|일자|date/i],['org',/시행처|업체|기관|org/i],['title',/공사명|명칭|제목|title/i],['ir',/절연저항|^ir/i],['pi',/성극|^p\.?i/i],['di',/교류전류|ΔI|^di/i],['tan',/tan|유전정접/i],['pd',/부분방전|^p\.?d/i],['note',/특이|비고|note|remark/i]];
+let PEND=null;
+const LBL=[['date',/^날짜/],['org',/^시행처/],['title',/^공사명/],['ir',/^절연저항/],['pi',/성극|^p\.?i/i],['di',/교류전류|ΔI|^di/i],['tan',/tan|유전정접/i],['pd',/부분방전|^p\.?d/i],['note',/^특이/]];
+const cellS=v=>v==null?'':String(v).replace(/\r?\n/g,' ').trim();
+/* 세로 블록형(호기마다 날짜/시행처/공사명/절연저항/P.I/ΔI/tanδ/P.D/특이사항 행, 회차가 열) */
+function rowsVertical(rows){const recs=[];let jl=-1,r0=-1;
+  for(let r=0;r<rows.length-1&&jl<0;r++)for(let j=0;j<rows[r].length;j++)if(cellS(rows[r][j])==='날짜'&&/^시행처/.test(cellS((rows[r+1]||[])[j]))){jl=j;r0=r;break}
+  if(jl<0)return null;
+  const starts=[];for(let r=r0;r<rows.length;r++)if(cellS(rows[r][jl])==='날짜')starts.push(r);
+  let unit='';
+  starts.forEach((r,si)=>{const end=si+1<starts.length?starts[si+1]:rows.length;
+    const u0=rows[r].slice(0,jl).map(cellS).find(x=>/[A-Za-z가-힣]/.test(x));if(u0)unit=u0;
+    const rowOf={};for(let k=r;k<end;k++){const t=cellS(rows[k][jl]);const m=LBL.find(([key,re])=>rowOf[key]==null&&re.test(t));if(m)rowOf[m[0]]=k}
+    const W=Math.max(...rows.slice(r,end).map(x=>x.length));
+    for(let c=jl+1;c<W;c++){const g=k=>rowOf[k]==null?'':rows[rowOf[k]][c];
+      const any=Object.keys(rowOf).some(k=>cellS(g(k))!=='');if(!any)continue;
+      const f={unit,date:normDate(typeof g('date')==='number'?g('date'):cellS(g('date')))};
+      ['org','title','note'].forEach(k=>{f[k]=cellS(g(k))});MK.forEach(k=>{f[k]=cellS(g(k))});recs.push(f)}});
+  return recs}
+/* 가로 표형(한 행 = 한 번의 진단) */
+function rowsHorizontal(rows,sn){const hi=rows.findIndex((r,i)=>i<15&&r.some(c=>/날짜|일자/.test(String(c))));if(hi<0)return [];
+  const col={};rows[hi].forEach((c,j)=>{const t=String(c).trim();if(!t)return;const k=XH.find(([k,re])=>col[k]==null&&re.test(t));if(k)col[k[0]]=j});
+  if(col.date==null)return [];const recs=[];
+  rows.slice(hi+1).forEach(r=>{const g=k=>col[k]==null?'':r[col[k]];const d=normDate(g('date'));
+    const f={unit:cellS(g('unit')),date:d,sheet:sn,org:cellS(g('org')),title:cellS(g('title')),note:cellS(g('note'))};MK.forEach(k=>{f[k]=cellS(g(k))});f.blank=r.every(c=>c==='');recs.push(f)});
+  return recs}
+const sigOf=e=>[e.org,e.title,e.note,...MK.map(k=>e[k])].map(x=>String(x==null?'':x).replace(/\s+/g,' ').trim()).join('\u0001');
+function parseXlsx(buf){const wb=XLSX.read(buf,{type:'array'}),um=unitMap(),out={adds:0,upd:0,same:0,skip:0,unk:new Set(),byUnit:{}};
+  wb.SheetNames.forEach(sn=>{const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:''});
+    const recs=rowsVertical(rows)||rowsHorizontal(rows,sn),sheetU=um[ukey(sn)];
+    recs.forEach(f=>{if(f.blank)return;if(!f.date){out.skip++;return}
+      const raw=String(f.unit||'').trim();let un=raw?um[ukey(raw)]:(sheetU||(D.insul[selU]||{}).unit);
+      if(!un){if(!raw){out.skip++;return}un=raw;out.unk.add(raw)}
+      (out.byUnit[un]=out.byUnit[un]||[]).push(f)})});
+  const plan={};Object.keys(out.byUnit).forEach(un=>{const u=D.insul.find(x=>x.unit===un),evs=u?u.events.slice():[];let ch=false;
+    out.byUnit[un].forEach(f=>{const i=evs.findIndex(e=>(e.d||'')===f.date&&(e.title||'')===(f.title||'')),ne=mkEvent(f,i>=0?evs[i]:null);
+      if(i>=0){if(sigOf(ne)===sigOf(evs[i])){out.same++;return}evs[i]=ne;out.upd++;ch=true}else{evs.push(ne);out.adds++;ch=true}});
+    if(ch)plan[un]=evs});
+  return {plan,out}}
+let SAVED='{}';
+function rebuildINS(){D.insul=D.insul.filter(u=>D0[u.unit]);D.insul.forEach(u=>{u.events=JSON.parse(JSON.stringify(D0[u.unit]))});applyINS(INS)}
+function updDirty(){const d=JSON.stringify(INS)!==SAVED;$('#idirty').textContent=d?'저장 안 된 변경 있음':'저장됨';$('#idirty').className='st '+(d?'warn':'mute');
+  $('#isave').disabled=!d;$('#icancel').disabled=!d;$('#isave').className='btn'+(d?' pri':'')}
+window.addEventListener('beforeunload',e=>{if(JSON.stringify(INS)!==SAVED){e.preventDefault();e.returnValue=''}});
+function showX(msg){const b=$('#xmsg');b.hidden=false;b.innerHTML=`<span>${msg}</span> <button class="btn" id="xno">닫기</button>`;$('#xno').onclick=()=>{b.hidden=true}}
+$('#xup').onclick=()=>$('#xfile').click();
+$('#xfile').onchange=function(){const f=this.files&&this.files[0];if(!f)return;const fr=new FileReader();
+  fr.onload=()=>{try{const r=parseXlsx(new Uint8Array(fr.result)),o=r.out,n=o.adds+o.upd;
+    if(!n){showX(o.same?`<b>${esc(f.name)}</b> · 변경할 내용이 없습니다. (이미 같은 내용 ${o.same}건)`:'반영할 행이 없습니다. "날짜" 항목이 있는 표인지 확인해 주세요.'+(o.skip?` (건너뜀 ${o.skip}건)`:''));return}
+    Object.keys(r.plan).forEach(un=>setEvents(un,r.plan[un]));const un0=Object.keys(r.plan)[0],i=D.insul.findIndex(x=>x.unit===un0);if(i>=0)selU=i;insul();
+    showX(`<b>${esc(f.name)}</b> · 호기 ${Object.keys(r.plan).length}개에서 새로 추가 ${o.adds}건 · 내용 변경 ${o.upd}건${o.same?` · 동일(변경 없음) ${o.same}건`:''}${o.skip?` · 건너뜀 ${o.skip}건`:''}${o.unk.size?` · 목록에 없던 호기 새로 만듦: ${esc([...o.unk].join(', '))}`:''}. <b>[저장하기]</b>를 눌러야 저장됩니다.`)}
+    catch(e){showX('엑셀 파일을 읽지 못했습니다: '+esc(e.message||e))}};
+  fr.readAsArrayBuffer(f);this.value=''};
+$('#xdn').onclick=()=>{const hd=['호기','날짜','시행처','공사명','절연저항 [MΩ] (A/B/C상)','성극지수 P.I','교류전류 ΔI [%]','유전정접 tanδ [%]','부분방전 P.D [pC]','특이사항'],rows=[hd];
+  D.insul.forEach(x=>x.events.forEach(e=>rows.push([x.unit,e.d||'',e.org||'',e.title||'',e.ir||'',e.pi||'',e.di||'',e.tan||'',e.pd||'',e.note||''])));
+  const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=[8,12,14,26,26,18,18,18,22,40].map(w=>({wch:w}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'절연진단');XLSX.writeFile(wb,'절연진단_이력.xlsx')};
+$('#isave').onclick=()=>{saveINS();SAVED=JSON.stringify(INS);updDirty();showX('저장했습니다. 이 브라우저에 보관됩니다. 다른 사람에게도 보이게 하려면 호기별 [수정 내용 복사]한 글을 Claude에게 붙여넣어 주세요.')};
+$('#icancel').onclick=()=>{INS=JSON.parse(SAVED);rebuildINS();if(selU>=D.insul.length)selU=0;insul();showX('저장하지 않은 변경을 취소했습니다.')};
+if(!window.XLSX){$('#xup').disabled=true;$('#xdn').disabled=true;$('#xup').title='엑셀 라이브러리를 불러오지 못했습니다(인터넷 연결 확인)'}
 function insul(){
-  const L=$('#ulist');
-  L.innerHTML=D.insul.map((u,i)=>{const last=u.events[u.events.length-1],w=u.events.filter(e=>WARN.test(e.note||'')&&!/없음|양호|이상 없/.test(e.note||'')).length;
-    return `<div class="row" role="option" tabindex="0" data-i="${i}" aria-selected="${i===selU}"><span><b>${esc(u.unit)}</b> ${w?`<span class="st warn" title="특이사항 있는 점검 ${w}회">▲ ${w}</span>`:''}</span><span class="m">${(last.d||'').slice(0,7)} · ${u.events.length}회</span></div>`}).join('');
+  updDirty();const L=$('#ulist');
+  L.innerHTML=D.insul.map((u,i)=>{const last=u.events[u.events.length-1]||{},w=u.events.filter(e=>WARN.test(e.note||'')&&!/없음|양호|이상 없/.test(e.note||'')).length;
+    return `<div class="row" role="option" tabindex="0" data-i="${i}" aria-selected="${i===selU}"><span><b>${esc(u.unit)}</b> ${INS[u.unit]?'<span class="tag" title="직접 수정/업로드 반영">✎</span>':''} ${w?`<span class="st warn" title="특이사항 있는 점검 ${w}회">▲ ${w}</span>`:''}</span><span class="m">${(last.d||'').slice(0,7)} · ${u.events.length}회</span></div>`}).join('');
   L.querySelectorAll('.row').forEach(r=>{const go=()=>{selU=+r.dataset.i;insul();};r.onclick=go;r.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go()}}});
-  const u=D.insul[selU],last=u.events[u.events.length-1];
+  if(selU<0||selU>=D.insul.length)selU=0;
+  const u=D.insul[selU],last=u.events[u.events.length-1]||{};
   const lastD=last.d?new Date(last.d.length===7?last.d+'-01':last.d):null,el=lastD?(TODAY-lastD)/31557600000:null;
-  const m=MET.find(x=>x[0]===selM),ser=[0,1,2].map(k=>u.events.map(e=>e.n[selM]?e.n[selM][k]:null));
-  const has=u.events.some(e=>e.n[selM]);
-  $('#ipanel').innerHTML=`<div class="ctl" style="justify-content:space-between;margin-bottom:10px"><div><h2 style="font-size:17px">${esc(u.unit)} 절연진단 이력</h2><div class="sub">진단 ${u.events.length}회 · 마지막 ${esc(last.d||'-')} (${el!=null?yrs(el)+' 경과':''}) · ${esc(last.org||'')}</div></div>
+  const m=MET.find(x=>x[0]===selM),ser=[0,1,2].map(k=>u.events.map(e=>e.n&&e.n[selM]?e.n[selM][k]:null));
+  const has=u.events.some(e=>e.n&&e.n[selM]);
+  $('#ipanel').innerHTML=`<div class="ctl" style="justify-content:space-between;margin-bottom:10px"><div><h2 style="font-size:17px">${esc(u.unit)} 절연진단 이력</h2><div class="sub">진단 ${u.events.length}회${last.d?` · 마지막 ${esc(last.d)} (${el!=null?yrs(el)+' 경과':''}) · ${esc(last.org||'')}`:''}</div></div>
    <div class="seg" id="mseg">${MET.map(x=>`<button aria-pressed="${x[0]===selM}" data-m="${x[0]}">${x[1]}</button>`).join('')}</div></div>
+   <div class="ctl" style="margin-bottom:8px"><button class="btn" id="iadd">+ 점검 추가</button><span style="flex:1"></span>
+     <button class="btn" id="icopy">수정 내용 복사</button><button class="btn" id="iimp">가져오기</button><button class="btn" id="irst">이 호기 되돌리기</button></div>
+   <div id="iio" hidden style="margin-bottom:8px"><div class="note" id="iiolab" style="margin-bottom:4px"></div><textarea id="iiotxt" rows="3" style="width:100%;font-family:var(--mono);font-size:12px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px"></textarea><button class="btn" id="iioapply" hidden style="margin-top:4px">적용</button></div>
    <div id="ichart">${has?'':'<div class="sub" style="padding:30px 0">이 지표의 수치 기록이 없습니다.</div>'}</div>
-   <div class="scroll" style="margin-top:12px"><table><thead><tr><th>날짜</th><th>시행처</th><th>공사명</th><th>${m[1]}${m[2]?' ['+m[2]+']':''} (A/B/C상)</th><th>특이사항</th></tr></thead><tbody>${[...u.events].reverse().map(e=>{
+   <div class="scroll" style="margin-top:12px"><table><thead><tr><th>날짜</th><th>시행처</th><th>공사명</th><th>${m[1]}${m[2]?' ['+m[2]+']':''} (A/B/C상)</th><th>특이사항</th><th>관리</th></tr></thead><tbody>${u.events.map((e,i)=>[e,i]).reverse().map(([e,i])=>{
      const w=WARN.test(e.note||'')&&!/없음|양호|이상 없/.test(e.note||'');
-     return `<tr><td class="n" style="text-align:left;white-space:nowrap">${esc(e.d||'')}</td><td>${esc(e.org||'')}</td><td>${esc(e.title||'')}</td><td style="font-variant-numeric:tabular-nums;white-space:nowrap">${e.n[selM]?e.n[selM].map(fmt).join(' / '):'<span class="sub">-</span>'}</td><td>${w?'<span class="st warn">▲</span> ':''}${esc(e.note||'')}</td></tr>`}).join('')}</tbody></table></div>`;
+     return `<tr><td class="n" style="text-align:left;white-space:nowrap">${esc(e.d||'')}${e.usr?' <span class="tag" title="직접 수정/업로드">✎</span>':''}</td><td>${esc(e.org||'')}</td><td>${esc(e.title||'')}</td><td style="font-variant-numeric:tabular-nums;white-space:nowrap">${e.n&&e.n[selM]?e.n[selM].map(nv).join(' / '):'<span class="sub">-</span>'}</td><td>${w?'<span class="st warn">▲</span> ':''}${esc(e.note||'')}</td><td style="white-space:nowrap"><button class="btn" data-ed="${i}" aria-label="${esc(e.d||'')} 수정">수정</button> <button class="btn" data-dl="${i}" aria-label="${esc(e.d||'')} 삭제">삭제</button></td></tr>`}).join('')}</tbody></table></div>`;
   $('#mseg').querySelectorAll('button').forEach(b=>b.onclick=()=>{selM=b.dataset.m;insul()});
+  $('#ipanel').querySelectorAll('[data-ed]').forEach(b=>b.onclick=()=>openIED(+b.dataset.ed));
+  $('#ipanel').querySelectorAll('[data-dl]').forEach(b=>b.onclick=function(){if(this.dataset.arm!=='1'){this.dataset.arm='1';this.textContent='정말 삭제?';this.className='btn kbad';const t=this;setTimeout(()=>{t.dataset.arm='';t.textContent='삭제';t.className='btn'},3500);return}
+    const evs=u.events.slice();evs.splice(+this.dataset.dl,1);setEvents(u.unit,evs);insul()});
+  $('#iadd').onclick=()=>openIED(-1);
+  $('#icopy').onclick=()=>{const s=JSON.stringify(INS);$('#iio').hidden=false;$('#iioapply').hidden=true;$('#iiolab').textContent='수정 내용입니다. 복사되었습니다. 이 글을 Claude에게 붙여넣으면 파일에 고정해 드립니다.';const ta=$('#iiotxt');ta.value=s;ta.select();try{navigator.clipboard.writeText(s).catch(()=>{})}catch(e){}};
+  $('#iimp').onclick=()=>{$('#iio').hidden=false;$('#iioapply').hidden=false;$('#iiolab').textContent='복사해 둔 수정 내용을 붙여넣고 적용을 누르세요.';$('#iiotxt').value='';$('#iiotxt').focus()};
+  $('#iioapply').onclick=()=>{try{const o=JSON.parse($('#iiotxt').value);if(!o||typeof o!=='object'||Array.isArray(o))throw 0;INS=o;rebuildINS();insul()}catch(e){$('#iiolab').textContent='형식이 맞지 않습니다. 복사한 내용을 그대로 붙여넣어 주세요.'}};
+  let ir0=0;$('#irst').onclick=function(){if(!ir0){ir0=1;this.textContent='정말 되돌릴까요? 한 번 더';setTimeout(()=>{ir0=0;this.textContent='이 호기 되돌리기'},3500);return}
+    ir0=0;delete INS[u.unit];if(D0[u.unit])u.events=JSON.parse(JSON.stringify(D0[u.unit]));else{D.insul.splice(selU,1);selU=0}insul()};
   if(has)lineChart($('#ichart'),u.events.map(e=>(e.d||'').slice(0,7)),[['A상','--s1',ser[0]],['B상','--s2',ser[1]],['C상','--s3',ser[2]]],m);
 }
 function lineChart(box,labels,series,m){
@@ -497,16 +616,17 @@ function kItems(u,g,y){const m=modelOf(u.unit),out=[];if(!m||!g||!D.crit[m])retu
   cSecs(m).forEach((s,si)=>s[1].forEach((x,j)=>{if(x.item&&/^O/.test(x[g]||''))out.push({sec:s[0],item:x.item,note:x.note||'',key:`${u.unit}|${y}|${si}|${x.id||'o'+j}`,old:`${u.unit}|${y}|${s[0]}|${x.item}`})}));return out}
 function kProg(u,y){const e=kEv(u,y),it=e?kItems(u,e.g,y):[];let d=0,n=0;it.forEach(i=>{const r=kGet(i);if(r&&r.s==='d')d++;else if(r&&r.s==='n')n++});return {t:it.length,d,n}}
 function kCur(){if(!kSel)return null;const u=REP.find(x=>x.unit===kSel.u);if(!u)return null;const e=kEv(u,kSel.y);if(!e)return null;return {u,y:kSel.y,e,items:kItems(u,e.g,kSel.y)}}
-function kMat(){const R=yrRange();let h='<thead><tr><th style="position:sticky;left:0;background:var(--surface)">호기</th>';
-  for(let y=R.s;y<=R.e;y++)h+=`<th style="text-align:center;${y===CUR?'color:var(--now);font-weight:600':''}">${String(y).slice(2)}</th>`;
+function kMatHtml(endY,showSel){const R=yrRange(),E=Math.max(R.s,endY);let h='<thead><tr><th style="position:sticky;left:0;background:var(--surface)">호기</th>';
+  for(let y=R.s;y<=E;y++)h+=`<th style="text-align:center;${y===CUR?'color:var(--now);font-weight:600':''}">${String(y).slice(2)}</th>`;
   h+='</tr></thead><tbody>';let cur='';
-  REP.forEach(u=>{if(u.group!==cur){cur=u.group;h+=`<tr class="grp"><td colspan="${R.e-R.s+2}">${esc(cur)}</td></tr>`}
+  REP.forEach(u=>{if(u.group!==cur){cur=u.group;h+=`<tr class="grp"><td colspan="${E-R.s+2}">${esc(cur)}</td></tr>`}
     h+=`<tr><td style="position:sticky;left:0;background:var(--surface);font-weight:600">${u.unit}</td>`;
-    for(let y=R.s;y<=R.e;y++){const e=kEv(u,y);if(!e){h+='<td></td>';continue}
-      const p=kProg(u,y),cl=!p.t?'':p.d===p.t?'ok':p.n?'bad':p.d?'part':'',sel=kSel&&kSel.u===u.unit&&kSel.y===y;
+    for(let y=R.s;y<=E;y++){const e=kEv(u,y);if(!e){h+='<td></td>';continue}
+      const p=kProg(u,y),cl=!p.t?'':p.d===p.t?'ok':p.n?'bad':p.d?'part':'',sel=showSel&&kSel&&kSel.u===u.unit&&kSel.y===y;
       h+=`<td style="text-align:center"><button class="kc ${cl} ${sel?'sel':''}" data-u="${u.unit}" data-y="${y}" title="${u.unit} ${y}년 ${e.g}급: 수행 ${p.d} · 미수행 ${p.n} · 해당 ${p.t}">${chip(e.g,!e.done)}<span>${p.d}/${p.t}${p.n?'!':''}</span></button></td>`}
     h+='</tr>'});
-  $('#kmat').innerHTML=h+'</tbody>'}
+  return h+'</tbody>'}
+function kMat(){$('#kmat').innerHTML=kMatHtml(yrRange().e,true)}
 function kHead(){const c=kCur(),box=$('#khead');$('#kctl').hidden=!c;
   if(!c){box.innerHTML='<div class="sub">위 표에서 호기·연도 칸을 선택하세요.</div>';return}
   const p=kProg(c.u,c.y),todo=p.t-p.d-p.n,pc=v=>p.t?v/p.t*100:0;
@@ -522,6 +642,7 @@ function kTab(){const c=kCur();if(!c){$('#ktab').innerHTML='';$('#kcnt').textCon
     n++;h+=`<tr><td>${esc(it.item)}${it.note?`<div class="note">${esc(it.note)}</div>`:''}</td><td style="white-space:nowrap"><button class="btn ${st==='d'?'pri':''}" data-i="${i}" data-s="d" aria-pressed="${st==='d'}">✓ 수행</button> <button class="btn ${st==='n'?'kbad':''}" data-i="${i}" data-s="n" aria-pressed="${st==='n'}">✕ 미수행</button></td><td><input class="ei" data-i="${i}" value="${esc(r.m||'')}" aria-label="메모" placeholder="메모"></td></tr>`});
   $('#ktab').innerHTML=h+'</tbody>';$('#kcnt').textContent=n+'개 표시'}
 function chk(){kMat();kHead();kTab()}
+$('#ovmat').onclick=e=>{const b=e.target.closest('button.kc');if(!b)return;kSel={u:b.dataset.u,y:+b.dataset.y};tab('check');$('#khead').scrollIntoView({behavior:'smooth',block:'start'})};
 $('#kmat').onclick=e=>{const b=e.target.closest('button.kc');if(!b)return;kSel={u:b.dataset.u,y:+b.dataset.y};chk();$('#khead').scrollIntoView({behavior:'smooth',block:'start'})};
 $('#ktab').onclick=e=>{const b=e.target.closest('button[data-i]');if(!b)return;const c=kCur();if(!c)return;
   const it=c.items[+b.dataset.i],r=kGet(it)||{};r.s=r.s===b.dataset.s?'':b.dataset.s;kPut(it,r);kHead();kTab();kMat()};
@@ -535,11 +656,11 @@ $('#kcopy').onclick=()=>{const s=JSON.stringify(CK);$('#kio').hidden=false;$('#k
 $('#kimp').onclick=()=>{$('#kio').hidden=false;$('#kioapply').hidden=false;$('#kiolab').textContent='복사해 둔 체크 내용을 붙여넣고 적용을 누르세요.';$('#kiotxt').value='';$('#kiotxt').focus()};
 $('#kioapply').onclick=()=>{try{const o=JSON.parse($('#kiotxt').value);if(!o||typeof o!=='object'||Array.isArray(o))throw 0;CK=o;saveCK();$('#kio').hidden=true;chk()}catch(e){$('#kiolab').textContent='형식이 맞지 않습니다. 복사한 내용을 그대로 붙여넣어 주세요.'}};
 /* ---------- tabs ---------- */
-function tab(t){if(t==='check')chk();document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.t===t));
+function tab(t){if(t==='check')chk();if(t==='overview')overview();document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.t===t));
   ['overview','timeline','insul','criteria','check'].forEach(id=>$('#'+id).hidden=id!==t);hideTip();
   try{history.replaceState(null,'','#'+t)}catch(e){}}
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>tab(b.dataset.t));
-loadOvr();loadCO();loadCK();build();overview();timeline();updBar();insul();criteria();
+loadOvr();loadCO();loadCK();loadINS();SAVED=JSON.stringify(INS);build();overview();timeline();updBar();insul();criteria();
 $('#asof').textContent=`${CUR}-${p2(TODAY.getMonth()+1)}-${p2(TODAY.getDate())}`;
 $('#todo').innerHTML=[
  '정비 등급 기준은 5,6호기 / 7~9호기 점검 기준표를 연결했고, 복합 3,4호기(GT7~12 · ST3·4)는 5~9호기 기준을 복사한 초안입니다(7~9호기 전체 + 5,6호기의 Encloure·Exciter). 3,4호기 실제 기준이 다르면 [점검항목 수정]으로 고치거나 알려주세요.',
