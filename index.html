@@ -434,7 +434,9 @@ const LSI='gen-dash-insul-v1',MK=['ir','pi','di','tan','pd'];
 const D0={};D.insul.forEach(u=>{D0[u.unit]=JSON.parse(JSON.stringify(u.events))});
 let INS={};
 function saveINS(){try{localStorage.setItem(LSI,JSON.stringify(INS))}catch(e){};updShare()}
-function applyINS(o){Object.keys(o||{}).forEach(un=>{const evs=o[un];if(!Array.isArray(evs))return;const u=D.insul.find(x=>x.unit===un);if(u)u.events=evs;else D.insul.push({unit:un,elapsed:'',events:evs,irUnit:'MΩ'})})}
+const HIDE_UNITS=new Set(['G/T #1','G/T #2','G/T #3','G/T #4','G/T #5','G/T #6','S/T #1','S/T #2'].map(x=>x.replace(/[^A-Z0-9]/gi,'').toUpperCase()));
+const isHidden=n=>HIDE_UNITS.has(String(n||'').replace(/[^A-Z0-9]/gi,'').toUpperCase());
+function applyINS(o){Object.keys(o||{}).forEach(un=>{if(isHidden(un)){delete o[un];return}const evs=o[un];if(!Array.isArray(evs))return;const u=D.insul.find(x=>x.unit===un);if(u)u.events=evs;else D.insul.push({unit:un,elapsed:'',events:evs,irUnit:'MΩ'})})}
 function loadINS(){try{INS=JSON.parse(localStorage.getItem(LSI)||'{}')||{}}catch(e){INS={}}applyINS(INS)}
 const dkey=d=>(d||'').padEnd(10,'0');
 function setEvents(un,evs){evs.sort((a,b)=>dkey(a.d).localeCompare(dkey(b.d)));let u=D.insul.find(x=>x.unit===un);
@@ -495,6 +497,7 @@ function parseXlsx(buf){const wb=XLSX.read(buf,{type:'array'}),um=unitMap(),out=
     recs.forEach(f=>{if(f.blank)return;if(!f.date){out.skip++;return}
       const raw=String(f.unit||'').trim();let un=raw?um[ukey(raw)]:(sheetU||(D.insul[selU]||{}).unit);
       if(!un){if(!raw){out.skip++;return}un=raw;out.unk.add(raw)}
+      if(isHidden(un)){out.hid=(out.hid||0)+1;out.unk.delete(raw);return}
       (out.byUnit[un]=out.byUnit[un]||[]).push(f)})});
   const plan={};Object.keys(out.byUnit).forEach(un=>{const u=D.insul.find(x=>x.unit===un),evs=u?u.events.slice():[];let ch=false;
     out.byUnit[un].forEach(f=>{const i=evs.findIndex(e=>(e.d||'')===f.date&&(e.title||'')===(f.title||'')),ne=mkEvent(f,i>=0?evs[i]:null);
@@ -512,7 +515,7 @@ $('#xfile').onchange=function(){const f=this.files&&this.files[0];if(!f)return;c
   fr.onload=()=>{try{const r=parseXlsx(new Uint8Array(fr.result)),o=r.out,n=o.adds+o.upd;
     if(!n){showX(o.same?`<b>${esc(f.name)}</b> · 변경할 내용이 없습니다. (이미 같은 내용 ${o.same}건)`:'반영할 행이 없습니다. "날짜" 항목이 있는 표인지 확인해 주세요.'+(o.skip?` (건너뜀 ${o.skip}건)`:''));return}
     Object.keys(r.plan).forEach(un=>setEvents(un,r.plan[un]));const un0=Object.keys(r.plan)[0],i=D.insul.findIndex(x=>x.unit===un0);if(i>=0)selU=i;insul();
-    showX(`<b>${esc(f.name)}</b> · 호기 ${Object.keys(r.plan).length}개에서 새로 추가 ${o.adds}건 · 내용 변경 ${o.upd}건${o.same?` · 동일(변경 없음) ${o.same}건`:''}${o.skip?` · 건너뜀 ${o.skip}건`:''}${o.unk.size?` · 목록에 없던 호기 새로 만듦: ${esc([...o.unk].join(', '))}`:''}. <b>[저장하기]</b>를 눌러야 저장됩니다.`)}
+    showX(`<b>${esc(f.name)}</b> · 호기 ${Object.keys(r.plan).length}개에서 새로 추가 ${o.adds}건 · 내용 변경 ${o.upd}건${o.same?` · 동일(변경 없음) ${o.same}건`:''}${o.skip?` · 건너뜀 ${o.skip}건`:''}${o.hid?` · 제외한 호기 ${o.hid}건`:''}${o.unk.size?` · 목록에 없던 호기 새로 만듦: ${esc([...o.unk].join(', '))}`:''}. <b>[저장하기]</b>를 눌러야 저장됩니다.`)}
     catch(e){showX('엑셀 파일을 읽지 못했습니다: '+esc(e.message||e))}};
   fr.readAsArrayBuffer(f);this.value=''};
 $('#xdn').onclick=()=>{const hd=['호기','날짜','시행처','공사명','절연저항 [MΩ] (A/B/C상)','성극지수 P.I','교류전류 ΔI [%]','유전정접 tanδ [%]','부분방전 P.D [pC]','특이사항'],rows=[hd];
